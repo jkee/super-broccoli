@@ -15,41 +15,41 @@ That's very useful in many terms. Especially useful when we're talking about dat
 #### Yandex.Metrica `hits` table
 Let's look at an example on Yandex.Metrica server `mtlog02-01-1` which store some Yandex.Metrica data for year 2013. Table we are looking at contains user events we call `hits`.
 This is the engine description for `hits` table:
-```(sql)
+```sql
 ENGINE = ReplicatedMergeTree(
-	'/clickhouse/tables/{layer}-{shard}/hits', -- zookeeper path
-	'{replica}', -- settings in config describing replicas
-	EventDate, -- partition key column
-	intHash32(UserID), -- sampling key
-	(CounterID, EventDate, intHash32(UserID), WatchID), -- index
-	8192 -- index granularity
+    '/clickhouse/tables/{layer}-{shard}/hits', -- zookeeper path
+    '{replica}', -- settings in config describing replicas
+    EventDate, -- partition key column
+    intHash32(UserID), -- sampling key
+    (CounterID, EventDate, intHash32(UserID), WatchID), -- index
+    8192 -- index granularity
 )
 ```
-You can see that the partition key column is `EventDate`.  That means that all the data will be splitted by months using this column.
+You can see that the partition key column is `EventDate`. That means that all the data will be splitted by months using this column.
 
 With this SQL we can get partitions list and some stats about current partitions:
 
-```(sql)
+```sql
 SELECT 
-	partition, 
-	count() as number_of_parts, 
-	round(sum(bytes) / 1024 / 1024 / 1024) as sum_size_gb 
+    partition, 
+    count() as number_of_parts, 
+    formatReadableSize(sum(bytes)) as sum_size 
 FROM system.parts 
 WHERE 
-	active 
-	AND database = 'merge' 
-	AND table = 'hits' 
+    active 
+    AND database = 'merge' 
+    AND table = 'hits' 
 GROUP BY partition 
 ORDER BY partition;
 
-┌─partition─┬─number_of_parts─┬─sum_size_gb─┐
-│ 201306    │               1 │         191 │
-│ 201307    │               4 │         538 │
-│ 201308    │               6 │         609 │
-│ 201309    │               5 │         659 │
-│ 201310    │               5 │         769 │
-│ 201311    │               5 │         655 │
-└───────────┴─────────────────┴─────────────┘
+┌─partition─┬─number_of_parts─┬─sum_size───┐
+│ 201306    │               1 │ 191.34 GiB │
+│ 201307    │               4 │ 537.86 GiB │
+│ 201308    │               6 │ 608.77 GiB │
+│ 201309    │               5 │ 658.68 GiB │    
+│ 201310    │               5 │ 768.74 GiB │
+│ 201311    │               5 │ 654.61 GiB │
+└───────────┴─────────────────┴────────────┘
 ```
 
 There is 6 partitions with a few parts in each of them. Each partition is around 600 Gb of data.
@@ -58,12 +58,12 @@ There is 6 partitions with a few parts in each of them. Each partition is around
 
 #### Partition operations
 There is a [nice set](https://clickhouse.yandex/reference_en.html#Manipulations%20with%20partitions%20and%20parts) of operations to work with partitions.
-```
-DETACH PARTITION - Move a partition to the 'detached' directory and forget it.
-DROP PARTITION - Delete a partition.
-ATTACH PART|PARTITION - Add a new part or partition from the 'detached' directory to the table.
-FREEZE PARTITION - Create a backup of a partition.
-FETCH PARTITION - Download a partition from another server.
+```sql
+DETACH PARTITION -- Move a partition to the 'detached' directory and forget it.
+DROP PARTITION -- Delete a partition.
+ATTACH PART|PARTITION -- Add a new part or partition from the 'detached' directory to the table.
+FREEZE PARTITION -- Create a backup of a partition.
+FETCH PARTITION -- Download a partition from another server.
 ```
 
 We can do any data management operations on partitions level: move, copy and delete.
@@ -99,13 +99,13 @@ We use our own data model with this approach. We call it **Incremental Log**.
 Let's look at an example.
 
 Here we have one session information with user identifier `UserID`, number of page viewed `PageViews`, time spent on site in seconds `Duration`. There is also `Sign` field, we describe it later.
-```
+```sql
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
 │ 4324182021466249494 │         5 │      146 │    1 │
 └─────────────────────┴───────────┴──────────┴──────┘
 ```
 And let's say we calculate some metrics over this data.
-```
+```sql
 count() -- number of sessions
 sum(PageViews) -- total number of pages all users checked
 avg(Duration) -- average session duration, how long user usually spent on the website
@@ -114,7 +114,7 @@ avg(Duration) -- average session duration, how long user usually spent on the we
 Let's say now we have update on that: user checked one more page, so we should change `PageViews` from `5` to `6` and `Duration` from `146` to `185`.
 
 We insert two more rows:
-```
+```sql
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
 │ 4324182021466249494 │         5 │      146 │   -1 │
 │ 4324182021466249494 │         6 │      185 │    1 │
@@ -125,7 +125,7 @@ First one is **delete** row. It's exactly the same row what we already have ther
 Second one is updated row with all data set to new values.
 
 After that we have three rows of data:
-```
+```sql
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
 │ 4324182021466249494 │         5 │      146 │    1 │
 │ 4324182021466249494 │         5 │      146 │   -1 │
@@ -133,7 +133,7 @@ After that we have three rows of data:
 └─────────────────────┴───────────┴──────────┴──────┘
 ```
 The most important part is modified metrics calculation. We should update our queries like this:
-```
+```sql
  -- number of sessions
 count() -> sum(Sign)
  -- total number of pages all users checked
@@ -146,7 +146,10 @@ You can see that it works as expected over this data. Deleted row 'hide' old row
 
 Moreover, it works totally fine with changing keys for grouping. If we want to group data by `PageViews`, all data for `PageView = 5` will be 'hidden' for this rows.
 
-There are some limitations with this approach. Basically, it works only for metrics which can be presented through this `Sign` operations. It covers most cases, but it's not possible to calculate min or max values. There is an impact to uniq calculations also. But it's fine at least for Yandex.Metrica cases, and there are a lot of different analytical calculations.
+There are some limitations with this approach. 
+ + It works only for metrics which can be presented through this `Sign` operations. It covers most cases, but it's not possible to calculate min or max values. There is an impact to uniq calculations also. But it's fine at least for Yandex.Metrica cases, and there are a lot of different analytical calculations;
+ + You need to remember somehow old value in external system doing updates, so you can insert this 'delete' rows;
+ + Some other effects; there is a [great answer](https://groups.google.com/forum/#!msg/clickhouse/VixyOUD-K68/Km8EpkCyAQAJ) on Google Groups.
 
 #### CollapsingMergeTree
 ClickHouse have support of **Incremental Log** model in `Collapsing` engines family.
