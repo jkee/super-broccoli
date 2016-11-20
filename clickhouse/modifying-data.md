@@ -1,7 +1,7 @@
 
 #How to update data in ClickHouse
 
-There is no UPDATE or DELETE commands in ClickHouse at the moment. And that's not because we have some religious believes. ClickHouse is performance-oriented system; and data modifications are hard to store and process optimal in terms of performance.
+There is no `UPDATE` or `DELETE` commands in ClickHouse at the moment. And that's not because we have some religious believes. ClickHouse is performance-oriented system; and data modifications are hard to store and process optimal in terms of performance.
 
 But sometimes we have to modify data. And sometimes data should be updated in realtime. 
 Don't worry; we have this cases covered.
@@ -76,8 +76,8 @@ This attach-detach commands works almost in no time so you can make your updates
 Here is the plan how to update data using partitions:
  + Create modified partition with updated data on another table
  + Copy data for this partition to `detached` directory
- + DROP PARTITION in main table
- + ATTACH PARTITION in main table
+ + `DROP PARTITION` in main table
+ + `ATTACH PARTITION` in main table
 
 Partition swap especially useful for huge data updates with low frequency.
 But they're not so handy when you need to update a lot of data in realtime.
