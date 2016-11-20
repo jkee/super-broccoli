@@ -71,7 +71,7 @@ Also, special `DETACH` and `ATTACH` operations are created for ease data manipul
 `DETACH` detaches partition from table, moving all data to `detached` directory. Data is still there and you can copy it anywhere but detached data is not visible on request level.
 `ATTACH` is the opposite: attaches data from `detached` directory so it become visible.
 
-This attach-detach commands works almost in no time so you can make your updates transparent to client.
+This attach-detach commands works almost in no time so you can make your updates close to transparent to database clients.
 
 Here is the plan how to update data using partitions:
  + Create modified partition with updated data on another table
