@@ -1,5 +1,5 @@
 
-#How to update your data in ClickHouse
+#How to update data in ClickHouse
 
 There is no UPDATE or DELETE commands in ClickHouse at the moment. And that's not because we have some religious believes. ClickHouse is performance-oriented system; and data modifications are hard to store and process optimal in terms of performance.
 
